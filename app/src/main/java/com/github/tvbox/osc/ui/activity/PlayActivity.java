@@ -177,6 +177,12 @@ public class PlayActivity extends BaseActivity {
                 if (msg.what == 100) {
                     stopParse();
                     errorWithRetry("嗅探错误", false);
+                } else if (msg.what == 200) {
+                    if (mHandler.hasMessages(100)) {
+                        setTip("加载完成，嗅探视频中", true, false);
+                    }
+                } else if (msg.what == 300) {
+                    setTip((String)msg.obj, false, true);
                 }
                 return false;
             }
@@ -304,6 +310,7 @@ public class PlayActivity extends BaseActivity {
 
         });
         mVideoView.setVideoController(mController);
+        mVideoView.setmHandler(mHandler);
     }
 
     //设置字幕
@@ -1922,6 +1929,8 @@ public class PlayActivity extends BaseActivity {
             if (!click.isEmpty()) {
                 mSysWebView.loadUrl("javascript:" + click);
             }
+
+            mHandler.sendEmptyMessage(200);
         }
 
         WebResourceResponse checkIsVideo(String url, HashMap<String, String> headers) {
