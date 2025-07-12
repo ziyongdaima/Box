@@ -1436,9 +1436,14 @@ public class PlayActivity extends BaseActivity {
             playUrl(vs.url.replace("tvbox-drive://", ""), headers);
             return;
         }
-        if (vs.url.startsWith("tvbox-xg:") && !TextUtils.isEmpty(vs.url.substring(9))) {
-            this.mController.showParse(false);
-            playUrl(Jianpian.JPUrlDec(vs.url.substring(9)), null);
+        if(Jianpian.isJpUrl(vs.url)){//荐片地址特殊判断
+            String jp_url= vs.url;
+            mController.showParse(false);
+            if(vs.url.startsWith("tvbox-xg:")){
+                playUrl(Jianpian.JPUrlDec(jp_url.substring(9)), null);
+            }else {
+                playUrl(Jianpian.JPUrlDec(jp_url), null);
+            }
             return;
         }
         if (Thunder.play(vs.url, new Thunder.ThunderCallback() {
@@ -1729,55 +1734,96 @@ public class PlayActivity extends BaseActivity {
         parseThreadPool.execute(new Runnable() {
             @Override
             public void run() {
-                JSONObject rs = isSuper? SuperParse.parse(jxs,parseFlag,webUrl):ApiConfig.get().jsonExtMix(parseFlag + "111", pb.getUrl(), finalExtendName, jxs, webUrl);
-                if (rs == null || !rs.has("url") || rs.optString("url").isEmpty()) {
-                    setTip("解析错误", false, true);
-                } else {
-                    if (rs.has("parse") && rs.optInt("parse", 0) == 1) {
-                        if (rs.has("ua")) {
-                            webUserAgent = rs.optString("ua").trim();
-                        }
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                String mixParseUrl = DefaultConfig.checkReplaceProxy(rs.optString("url", ""));
-                                stopParse();
-                                setTip("正在嗅探播放地址", true, false);
-                                mHandler.removeMessages(100);
-                                mHandler.sendEmptyMessageDelayed(100, 20 * 1000);
-                                loadWebView(mixParseUrl);
-                            }
-                        });
+                if(isSuper){
+                    JSONObject rs = SuperParse.parse(jxs,parseFlag+"123",webUrl);
+                    if (!rs.has("url") || rs.optString("url").isEmpty()) {
+                        setTip("解析错误", false, true);
                     } else {
-                        HashMap<String, String> headers = null;
-                        if (rs.has("header")) {
-                            try {
-                                JSONObject hds = rs.getJSONObject("header");
-                                Iterator<String> keys = hds.keys();
-                                while (keys.hasNext()) {
-                                    String key = keys.next();
-                                    if (headers == null) {
-                                        headers = new HashMap<>();
-                                    }
-                                    headers.put(key, hds.getString(key));
-                                }
-                            } catch (Throwable th) {
-
+                        if (rs.has("parse") && rs.optInt("parse", 0) == 1) {
+                            if (rs.has("ua")) {
+                                webUserAgent = rs.optString("ua").trim();
                             }
-                        }
-                        if (rs.has("jxFrom")) {
+                            setTip("超级解析中", true, false);
                             runOnUiThread(new Runnable() {
                                 @Override
                                 public void run() {
-                                    Toast.makeText(mContext, "解析来自:" + rs.optString("jxFrom"), Toast.LENGTH_SHORT).show();
+                                    String mixParseUrl = DefaultConfig.checkReplaceProxy(rs.optString("url", ""));
+                                    stopParse();
+                                    mHandler.removeMessages(100);
+                                    mHandler.sendEmptyMessageDelayed(100, 20 * 1000);
+                                    loadWebView(mixParseUrl);
                                 }
                             });
+                            parseThreadPool.execute(new Runnable() {
+                                @Override
+                                public void run() {
+                                    JSONObject res = SuperParse.doJsonJx(webUrl);
+                                    rsJsonJx(res, true);
+                                }
+                            });
+                        } else {
+                            rsJsonJx(rs,false);
                         }
-                        playUrl(rs.optString("url", ""), headers);
+                    }
+                }else {
+                    JSONObject rs = ApiConfig.get().jsonExtMix(parseFlag + "111", pb.getUrl(), finalExtendName, jxs, webUrl);
+                    if (rs == null || !rs.has("url") || rs.optString("url").isEmpty()) {
+                        setTip("解析错误", false, true);
+                    } else {
+                        if (rs.has("parse") && rs.optInt("parse", 0) == 1) {
+                            if (rs.has("ua")) {
+                                webUserAgent = rs.optString("ua").trim();
+                            }
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    String mixParseUrl = DefaultConfig.checkReplaceProxy(rs.optString("url", ""));
+                                    stopParse();
+                                    setTip("正在嗅探播放地址", true, false);
+                                    mHandler.removeMessages(100);
+                                    mHandler.sendEmptyMessageDelayed(100, 20 * 1000);
+                                    loadWebView(mixParseUrl);
+                                }
+                            });
+                        } else {
+                           rsJsonJx(rs,false);
+                        }
                     }
                 }
             }
         });
+    }
+    private void rsJsonJx(JSONObject rs,boolean isSuper)
+    {
+        if(isSuper){
+            if(rs==null || !rs.has("url"))return;
+            stopLoadWebView(false);
+        }
+        HashMap<String, String> headers = null;
+        if (rs.has("header")) {
+            try {
+                JSONObject hds = rs.getJSONObject("header");
+                Iterator<String> keys = hds.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    if (headers == null) {
+                        headers = new HashMap<>();
+                    }
+                    headers.put(key, hds.getString(key));
+                }
+            } catch (Throwable th) {
+
+            }
+        }
+        if (rs.has("jxFrom")) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Toast.makeText(mContext, "解析来自:" + rs.optString("jxFrom"), Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+        playUrl(rs.optString("url", ""), headers);
     }
 
     // webview
@@ -2044,24 +2090,9 @@ public class PlayActivity extends BaseActivity {
         @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view,url);
-            String click=sourceBean.getClickSelector().trim();
             LOG.i("echo-onPageFinished url:" + url);
-            if(!click.isEmpty()){
-                String selector;
-                if(click.contains(";") && !click.endsWith(";")){
-                    if(!url.contains(click.split(";")[0]))return;
-                    selector=click.split(";")[1];
-                }else {
-                    selector=click;
-                }
-                String js = selector;
-                if(!selector.contains("click()"))js+=".click();";
-                LOG.i("echo-javascript:" + js);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                    view.evaluateJavascript(js, null);
-                } else {
-                    view.loadUrl("javascript:" + js);
-                }
+            if(!url.equals("about:blank")){
+                mController.evaluateScript(sourceBean,url,view,null);
             }
             mHandler.sendEmptyMessage(200);
         }
@@ -2101,6 +2132,7 @@ public class PlayActivity extends BaseActivity {
                         if (!TextUtils.isEmpty(cookie))
                             headers.put("Cookie", " " + cookie);//携带cookie
                         playUrl(url, headers);
+                        SuperParse.stopJsonJx();
                         stopLoadWebView(false);
                     }
                 }
@@ -2226,6 +2258,10 @@ public class PlayActivity extends BaseActivity {
         @Override
         public void onLoadFinished(XWalkView view, String url) {
             super.onLoadFinished(view, url);
+            LOG.i("echo-onPageFinished url:" + url);
+            if(!url.equals("about:blank")){
+                mController.evaluateScript(sourceBean,url,null,view);
+            }
         }
 
         @Override
@@ -2281,6 +2317,7 @@ public class PlayActivity extends BaseActivity {
                         if (!TextUtils.isEmpty(cookie))
                             webHeaders.put("Cookie", " " + cookie);//携带cookie
                         playUrl(url, webHeaders);
+                        SuperParse.stopJsonJx();
                         stopLoadWebView(false);
                     }
                 }
